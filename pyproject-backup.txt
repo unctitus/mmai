@@ -1,0 +1,68 @@
+[project]
+name = "simpler_env"
+version = "0.1.0"
+authors = [
+    { name = "Titus", email = "tis@cs.unc.edu" }
+]
+requires-python = ">=3.10"
+dependencies = [
+    "apache-beam>=2.63.0",
+    "chex==0.1.85",
+    "coacd>=1.0.5",
+    "distrax==0.1.5",
+    # "dlimp",
+    # "dm-reverb[tensorflow]==0.14.0",
+    "einops>=0.8.1",
+    "flax>=0.8.4",
+    "ipykernel>=6.29.5",
+    "ipython==8.22.2",
+    "ipywidgets>=8.1.5",
+    "jupyter>=1.1.1",
+    "mani-skill2-real2sim",
+    "matplotlib>=3.10.0",
+    "mediapy==1.2.0",
+    "ml-collections>=1.0.0",
+    "octo",
+    "optax==0.1.5",
+    "pandas>=2.2.3",
+    "plotly>=6.0.0",
+    "rlds==0.1.8",
+    "ruckig>=0.14.0",
+    "scipy==1.12.0",
+    "simulated-annealing",
+    "tensorflow>=2.16.0",
+    "tensorflow-datasets==4.9.4",
+    "tensorflow-hub==0.16.0",
+    "tf-agents==0.19.0",
+    "tf-keras>=2.18.0",
+    "tfds-nightly==4.9.4.dev202403220044",
+    "tfp-nightly==0.25.0.dev20240322",
+    "transformers>=4.49.0",
+    "wandb>=0.18.7",
+]
+
+[tool.uv.sources]
+mani-skill2-real2sim = { path = "ManiSkill2_real2sim", editable = true }
+dlimp = { git = "https://github.com/kvablack/dlimp.git" }
+simulated-annealing = { git = "https://github.com/nathanrooy/simulated-annealing" }
+simpler-env = { workspace = true }
+octo = { path = "octo", editable = true }
+
+[[tool.uv.index]]
+url = "https://storage.googleapis.com/jax-releases/jax_cuda_releases.html"
+
+[dependency-groups]
+dev = [
+    "simpler-env",
+]
+
+[tool.uv]
+link-mode = "symlink"
+python-preference = "only-managed"
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["simpler_env"]
