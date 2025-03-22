@@ -1,3 +1,6 @@
+
+ ###### This script is part of the original SIMPLER code ######
+
 import simpler_env
 from simpler_env.utils.env.observation_utils import get_image_from_maniskill2_obs_dict
 
