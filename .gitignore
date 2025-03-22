@@ -11,6 +11,8 @@ wheels/
 
 # Results Folder
 results
+results.zip
+
 
 #checkpoints
 checkpoints

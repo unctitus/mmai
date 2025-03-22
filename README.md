@@ -1,7 +1,7 @@
 # Enhcaning VLA Evaluation in Simulation 
 
 My code can be found under `scripts/mine`. For running my 
-redesign of the original evaluation logic of SIMPLER. Please run the `scripts/mine/eval.ipynb` notebook. Make sure to copy the provided `results` folder into repository. To reproduce the results from scratch please first install simpler according to the orignal code repo README, which can be found below. 
+redesign of the original evaluation logic of SIMPLER. Please run the `scripts/mine/eval.ipynb` notebook. Make sure download the results.zip from [Google Drive Shared Folder](https://drive.google.com/drive/folders/1D0byF8E-FWYDdgePoqOmP4ErQjSpXhVD?usp=sharing)  to copy the copy provided `results` folder into repository. To reproduce the results from scratch please first install simpler according to the orignal code repo README, which can be found below. 
 
 
 # SimplerEnv: Simulated Manipulation Policy Evaluation Environments for Real Robot Setups
