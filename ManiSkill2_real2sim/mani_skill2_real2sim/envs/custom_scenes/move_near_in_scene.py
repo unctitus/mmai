@@ -1,5 +1,5 @@
 from collections import OrderedDict
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import numpy as np
 import sapien.core as sapien
@@ -10,6 +10,7 @@ from mani_skill2_real2sim import ASSET_DIR
 from mani_skill2_real2sim.utils.common import random_choice
 from mani_skill2_real2sim.utils.registration import register_env
 from mani_skill2_real2sim.utils.sapien_utils import vectorize_pose
+from transforms3d.euler import quat2euler
 
 from .base_env import CustomSceneEnv, CustomOtherObjectsInSceneEnv
 
@@ -71,7 +72,7 @@ class MoveNearInSceneEnv(CustomSceneEnv):
             ASSET_DIR / "real_inpainting/google_move_near_real_eval_1.png"
         )
         ret["rgb_overlay_cameras"] = ["overhead_camera"]
-
+        print("Loading Overlay Image from:", ret["rgb_overlay_path"])
         return ret
 
     def _get_default_scene_config(self):
@@ -761,3 +762,365 @@ class MoveNearAltGoogleCamera2InSceneEnv(MoveNearGoogleInSceneEnv):
         )
 
         return super().reset(seed=seed, options=options)
+
+@register_env("NewScene", max_episode_steps=80)
+class MoveNearWithCustomOverlayEnv(MoveNearGoogleInSceneEnv):
+    def __init__(self, **kwargs):
+        # force use of the “prepackaged” lookup (so _setup_prepackaged_env_init_config is applied)
+        kwargs.setdefault("prepackaged_config", True)
+        super().__init__(**kwargs)
+
+    def _setup_prepackaged_env_init_config(self):
+        # grab the default config dict…
+        cfg = super()._setup_prepackaged_env_init_config()
+        # then swap in your new overlay image
+        cfg["rgb_overlay_path"] = str(
+            ASSET_DIR / "real_inpainting" / "table_env1.png"
+        )
+        # (optionally you can adjust cfg["rgb_overlay_cameras"] as well)
+        print("Loading Overlay Image from:", cfg["rgb_overlay_path"])
+        return cfg
+
+
+@register_env("MoveNearWithCustomOverlayEnv", max_episode_steps=80)
+class MoveNearWithCustomOverlayEnv(MoveNearGoogleInSceneEnv):
+    def __init__(self, **kwargs):    
+        # storage for surface actors and their params
+        self.surface_actors: dict[str, sapien.pysapien.ActorStatic] = {}
+        self.surface_params: dict[str, dict] = {}
+        # store default base pose and size
+        q = euler2quat(0, 0, np.deg2rad(28))
+        self.default_base_pose = sapien.Pose(p=[-0.42, 0, 0.017 + 0.865 / 2], q=q)
+        self.default_base_half_size = np.array([0.95, 3.2, 0.865]) / 2
+        super().__init__(**kwargs)
+
+    def get_surface_actor(self, name: str) -> sapien.pysapien.ActorStatic:
+        """
+        Retrieve a surface actor by its registered name.
+        """
+        actor = self.surface_actors.get(name)
+        if actor is None:
+            raise KeyError(f"No surface found with name '{name}'")
+        return actor
+    
+    def get_all_surface_actors(self) -> list[sapien.pysapien.Actor]:
+        """
+        Retrieve all surface actors.
+        """
+        return list(self.surface_actors.values())
+    
+    def add_surface(
+        self,
+        base_pose: sapien.Pose = None,
+        base_half_size: np.ndarray = None,
+        *,
+        size_xy: tuple[float, float] = (0.2, 0.2),
+        thickness: float = 1e-3,
+        offset_xy: tuple[float, float] = (-0.35, 0.15),
+        color: tuple[float, float, float, float] = (0.0, 1.0, 0.0, 1.0),
+        metallic: float = 0.0,
+        roughness: float = 0.3,
+        specular: float = 0.8,
+        name: str = "surface_sheet",
+    ) -> sapien.pysapien.ActorStatic:
+        """
+        Create a thin box “sheet” on top of another box, with both visual and collision geometry.
+        Supports non-uniform size.
+        """
+        # check if name already exists
+        if name in self.surface_actors:
+            return self.surface_actors[name]
+        # defaults
+        if base_pose is None:
+            base_pose = self.default_base_pose
+        if base_half_size is None:
+            base_half_size = self.default_base_half_size
+
+        # store params for future resizing
+        params = dict(
+            base_pose=base_pose,
+            base_half_size=base_half_size,
+            size_xy=size_xy,
+            thickness=thickness,
+            offset_xy=offset_xy,
+            color=color,
+            metallic=metallic,
+            roughness=roughness,
+            specular=specular,
+            name=name,
+        )
+        self.surface_params[name] = params
+
+        # build actor
+        actor = self._build_surface_actor(params)
+        return actor
+
+    def _build_surface_actor(self, params: dict) -> sapien.pysapien.ActorStatic:
+        # unpack params
+        base_pose = params['base_pose']
+        base_half_size = params['base_half_size']
+        size_xy = params['size_xy']
+        thickness = params['thickness']
+        offset_xy = params['offset_xy']
+        color = params['color']
+        metallic = params['metallic']
+        roughness = params['roughness']
+        specular = params['specular']
+        name = params['name']
+
+        scene = self._scene
+        renderer = self._renderer
+        builder = scene.create_actor_builder()
+
+        # compute half-size and pose
+        half = np.array([size_xy[0], size_xy[1], thickness], dtype=np.float32) / 2
+        p = base_pose.p.copy()
+        p[0] += offset_xy[0]
+        p[1] += offset_xy[1]
+        p[2] += base_half_size[2] + thickness / 2
+        sheet_pose = sapien.Pose(p=p, q=base_pose.q)
+
+        # material
+        m = renderer.create_material()
+        m.base_color = np.array(color, dtype=np.float32)
+        m.metallic = metallic
+        m.roughness = roughness
+        m.specular = specular
+
+        # add collision and visual
+        builder.add_box_collision(pose=sheet_pose, half_size=half)
+        builder.add_box_visual(pose=sheet_pose, half_size=half, material=m)
+        #actor = builder.build_static(name=name)
+        actor = builder.build(name=name)
+        self.surface_actors[name] = actor
+        return actor
+    
+    def build_surface_actor_from_pose(
+        self, 
+        pose: Tuple[float, float, float, float, float, float],
+        size: Tuple[float, float, float] = [0.2, 0.2, 1e-3],
+        color: Tuple[float, float, float, float] = [0.0, 1.0, 0.0, 1.0],
+        material: Tuple[float, float, float] = [0.0, 0.3, 0.8],
+        name: str = "surface_sheet"):
+      
+        scene = self._scene
+        renderer = self._renderer
+        builder = scene.create_actor_builder()
+
+        half_size = np.array(size, dtype=np.float32) / 2
+        sheet_pose = sapien.Pose(p=pose[:3], q=euler2quat(pose[3], pose[4], pose[5]))
+
+        # material
+        m = renderer.create_material()
+        m.base_color = np.array(color, dtype=np.float32)
+        m.metallic, m.roughness, m.specular = material
+
+        # add collision and visual
+        builder.add_box_collision(pose=sheet_pose, half_size=half_size)
+        builder.add_box_visual(pose=sheet_pose, half_size=half_size, material=m)
+
+           # store params for future resizing
+        params = dict(
+            base_pose=sapien.Pose(p=[0, 0, 0], q=euler2quat(0, 0, 0)),
+            base_half_size= np.array([0, 0, 0]),
+            size_xy=size[:2],
+            thickness=size[2],
+            offset_xy=(0, 0),
+            color=color,
+            metallic=0.0,
+            roughness=0.3,
+            specular=0.8,
+            name=name,
+        )
+        
+        actor = builder.build(name=name)
+
+        self.surface_params[name] = params
+        self.surface_actors[name] = actor
+    
+
+    def set_surface_pose(self, name: str, pose: sapien.Pose) -> None:
+        actor = self.surface_actors.get(name)
+        if actor is None:
+            raise KeyError(f"No surface found with name '{name}'")
+        actor.set_pose(pose)
+
+    def set_surface_pose_from_values(
+        self,
+        name: str,
+        x: float,
+        y: float,
+        z: float,
+        roll: float = 0.0,
+        pitch: float = 0.0,
+        yaw: float = 0.0,
+    ) -> None:
+        quat = euler2quat(roll, pitch, yaw)
+        self.set_surface_pose(name, sapien.Pose(p=[x, y, z], q=quat))
+
+    def set_surface_size(
+        self,
+        name: str,
+        size_xy: tuple[float, float],
+        thickness: float = 1e-3
+    ) -> None:
+        """
+        Resize both visual and collision geometry of a previously added surface.
+        """
+        params = self.surface_params.get(name)
+        if params is None:
+            raise KeyError(f"No surface found with name '{name}'")
+        # update size
+        params['size_xy'] = size_xy
+        params['thickness'] = thickness
+        # release old actor
+
+        old = self.surface_actors.pop(name, None)
+        if old is not None:
+            self._scene.remove_actor(old)
+
+        # rebuild with new size
+        actor = self._build_surface_actor(params)
+        self.surface_actors[name] = actor
+    
+    def get_surface_actor_pose_values(self, name: str) -> tuple[float, float, float, float, float, float]:
+        """
+        Return (x, y, z, roll, pitch, yaw) of the named surface actor.
+        """
+        actor = self.surface_actors.get(name)
+        if actor is None:
+            raise KeyError(f"No surface found with name '{name}'")
+
+        pose = actor.get_pose()
+        x, y, z = pose.p
+        qx, qy, qz, qw = pose.q  # sapien: [x, y, z, w]
+
+        # transforms3d expects [w, x, y, z]
+        roll, pitch, yaw = quat2euler([qw, qx, qy, qz], axes='sxyz')
+        return x, y, z, roll, pitch, yaw     
+    
+    def get_surface_size(self, name: str) -> tuple[float, float]:
+        """
+        Get the size of a previously added surface.
+        """
+        params = self.surface_params.get(name)
+        if params is None:
+            raise KeyError(f"No surface found with name '{name}'")
+        return params['size_xy'], params['thickness']
+
+    def _load_model(self):
+        self.build_surface_actor_from_pose(pose= [-0.065, 0.127, 0.882, 0.0, 0.0, 0.0], 
+                                            size=[0.21, 0.261, 1e-3], 
+                                            name = "number6")
+        self.build_surface_actor_from_pose(pose= [-0.065, 0.127, 0.882, 0.0, 0.0, 0.6204], 
+                                            size=[0.21, 0.261, 1e-3], 
+                                            name = "number6")  
+        self.build_surface_actor_from_pose(pose= [-0.065, 0.127, 0.882, 0.0, 0.0, 0.0], 
+                                            size=[0.21, 0.261, 1e-3], 
+                                            name = "number6")                                                 
+ 
+        super()._load_model()
+
+@register_env("MoveNearWithCustomOverlayEnv2", max_episode_steps=80)
+class MoveNearWithCustomOverlayEnv2(MoveNearGoogleInSceneEnv):
+    def __init__(self, **kwargs):
+        # force use of the “prepackaged” lookup
+        kwargs.setdefault("prepackaged_config", True)
+        super().__init__(**kwargs)
+
+        # initialize storage for surface actors
+        self.surface_actors: dict[str, sapien.pysapien.ActorStatic] = {}
+
+        # store default base pose and size
+        q = euler2quat(0, 0, np.deg2rad(28))
+        self.default_base_pose = sapien.Pose(p=[-0.42, 0, 0.017 + 0.865 / 2], q=q)
+        self.default_base_half_size = np.array([0.95, 3.2, 0.865]) / 2
+
+    def _setup_prepackaged_env_init_config(self):
+        cfg = super()._setup_prepackaged_env_init_config()
+        cfg["rgb_overlay_path"] = str(
+            ASSET_DIR / "real_inpainting" / "table_env1.png"
+        )
+        print("Loading Overlay Image from:", cfg["rgb_overlay_path"])
+        return cfg
+
+    def add_surface(
+        self,
+        base_pose: sapien.Pose = None,
+        base_half_size: np.ndarray = None,
+        *,
+        size_xy: tuple[float, float] = (0.2, 0.2),
+        thickness: float = 1e-3,
+        offset_xy: tuple[float, float] = (-0.35, 0.15),
+        color: tuple[float, float, float, float] = (0.0, 1.0, 0.0, 1.0),
+        metallic: float = 0.0,
+        roughness: float = 0.3,
+        specular: float = 0.8,
+        name: str = "surface_sheet",
+    ) -> sapien.pysapien.ActorStatic:
+        """
+        Create a thin box “sheet” on top of another box, as its own static actor with the given name.
+
+        Args:
+          base_pose       – Pose of the underlying box (center). Defaults to env's preset.
+          base_half_size  – its half‐extents. Defaults to env's preset.
+        """
+        # use defaults if none provided
+        if base_pose is None:
+            base_pose = self.default_base_pose
+        if base_half_size is None:
+            base_half_size = self.default_base_half_size
+
+        # fetch the SAPIEN scene, renderer, builder
+        scene = self._scene
+        renderer = self._renderer
+        builder = scene.create_actor_builder()
+
+        # create material
+        m = renderer.create_material()
+        m.base_color = np.array(color, dtype=np.float32)
+        m.metallic = metallic
+        m.roughness = roughness
+        m.specular = specular
+
+        # compute sheet half‐size and world pose
+        half = np.array([size_xy[0], size_xy[1], thickness], dtype=np.float32) / 2
+        p = base_pose.p.copy()
+        p[0] += offset_xy[0]
+        p[1] += offset_xy[1]
+        p[2] += base_half_size[2] + thickness / 2
+        sheet_pose = sapien.Pose(p=p, q=base_pose.q)
+
+        # add visual and build static actor
+        builder.add_box_visual(pose=sheet_pose, half_size=half, material=m)
+        actor = builder.build_static(name=name)
+
+        # store for later manipulation
+        self.surface_actors[name] = actor
+        return actor
+
+    def set_surface_pose(self, name: str, pose: sapien.Pose) -> None:
+        """
+        Set the absolute pose of a previously added surface by name.
+        """
+        actor = self.surface_actors.get(name)
+        if actor is None:
+            raise KeyError(f"No surface found with name '{name}'")
+        actor.set_pose(pose)
+
+    def set_surface_pose_from_values(
+        self,
+        name: str,
+        x: float,
+        y: float,
+        z: float,
+        roll: float = 0.0,
+        pitch: float = 0.0,
+        yaw: float = 0.0,
+    ) -> None:
+        """
+        Convenience method to set a surface's pose using separate position and Euler angles.
+        """
+        quat = euler2quat(roll, pitch, yaw)
+        new_pose = sapien.Pose(p=[x, y, z], q=quat)
+        self.set_surface_pose(name, new_pose)

@@ -80,6 +80,7 @@ class PutOnInSceneEnv(MoveNearInSceneEnv):
 
         pos_src = source_obj_pose.p
         pos_tgt = target_obj_pose.p
+        #Vector that point from the target to source object
         offset = pos_src - pos_tgt
         xy_flag = (
             np.linalg.norm(offset[:2])
@@ -105,6 +106,7 @@ class PutOnInSceneEnv(MoveNearInSceneEnv):
                     other_obj_contact_actor_name = actor_1.name
                 elif actor_1.name == self.episode_source_obj.name:
                     other_obj_contact_actor_name = actor_0.name
+                #For contacts with source object
                 if other_obj_contact_actor_name is not None:
                     # the object is in contact with an actor
                     contact_impulse = np.sum(

@@ -26,6 +26,8 @@ from mani_skill2_real2sim.utils.sapien_utils import (
     vectorize_pose,
 )
 
+from transforms3d.euler import euler2quat
+
 class CustomSceneEnv(BaseEnv):
     SUPPORTED_ROBOTS = {"google_robot_static": GoogleRobotStaticBase, 
                         "widowx": WidowX,
@@ -139,6 +141,7 @@ class CustomSceneEnv(BaseEnv):
     
     def _load_arena_helper(self, add_collision=True):
         builder = self._scene.create_actor_builder()
+        dummy_tabletop_scenes = ["dummy_tabletop", "dummy_tabletop1", "dummy_reasoning_numbers"]
         # scene path
         if self.scene_name is None:
             if 'google_robot_static' in self.robot_uid:
@@ -177,7 +180,7 @@ class CustomSceneEnv(BaseEnv):
             elif "modern_office" in self.scene_name:
                 scene_offset = np.array([-1.6616, -3.0337, 0.0])
                 scene_pose = sapien.Pose([-0.192, -1.728, 1.48], [0.709, 0, 0, -0.705]) * scene_pose
-            elif self.scene_name == "dummy_tabletop":
+            elif self.scene_name in dummy_tabletop_scenes:
                 scene_pose = sapien.Pose()
                 scene_offset = np.array([0, -0.21, 0])
 
@@ -194,9 +197,22 @@ class CustomSceneEnv(BaseEnv):
             elif self.scene_name == "dummy_drawer":
                 builder.add_box_visual(half_size=np.array([10.0, 10.0, 0.017]), color=[1, 1, 1])
                 # builder.add_box_visual(half_size=np.array([10.0, 10.0, 0.017]), color=[0.6054843 , 0.34402566, 0.17013837])
-            elif self.scene_name == "dummy_tabletop":
-                _pose = sapien.Pose([-0.295, 0, 0.017 + 0.865 / 2])
-                _half_size = np.array([0.63, 0.615, 0.865]) / 2
+            elif self.scene_name in dummy_tabletop_scenes:
+                if self.scene_name == "dummy_tabletop":
+                    _pose = sapien.Pose([-0.295, 0, 0.017 + 0.865 / 2])
+                    _half_size = np.array([0.63, 0.615, 0.865]) / 2
+                elif self.scene_name == "dummy_tabletop1":
+                    q = euler2quat(0, 0, np.deg2rad(-6))
+                    _pose = sapien.Pose(p=[-0.42, 0, 0.017 + 0.865 / 2], q=q)
+                    _half_size = np.array([0.87, 1.8, 0.865]) / 2
+                elif self.scene_name == "dummy_reasoning_numbers":
+                    q = euler2quat(0, 0, np.deg2rad(28))
+                    _pose = sapien.Pose(p=[-0.42, 0, 0.017 + 0.865 / 2], q=q)
+                    _half_size = np.array([0.95, 3.2, 0.865]) / 2
+                    #table_half_size = _half_size.copy()
+                    #table_pose = _pose.p.copy()
+                else:
+                    raise NotImplementedError(self.scene_name)
                 # _color = [0.325, 0.187, 0.1166]
                 _color = (np.array([168, 120, 79]) / 255) ** 2.2
                 rend_mtl = self._renderer.create_material()
@@ -207,6 +223,37 @@ class CustomSceneEnv(BaseEnv):
                 builder.add_box_visual(pose=_pose, half_size=_half_size, material=rend_mtl)
                 if add_collision:
                     builder.add_box_collision(pose=_pose, half_size=_half_size)
+                
+                # Add red surface on top of the table
+                surface_mtl = self._renderer.create_material()
+                surface_mtl.base_color = np.array([1.0, 0.0, 0.0, 1.0])
+                surface_mtl.metallic  = 0.0
+                surface_mtl.roughness = 0.3
+                surface_mtl.specular  = 0.8
+                thickness = 1e-3
+                face_half = np.array([_half_size[0], _half_size[1], thickness])
+                face_p = _pose.p.copy()
+                face_p[2] += (_half_size[2] - thickness)
+                face_pose = sapien.Pose(p=face_p, q=_pose.q)
+                builder.add_box_visual(pose=face_pose, half_size=face_half, material=surface_mtl)
+
+                # Add surface for number sheet on top of the table
+                surface_mtl = self._renderer.create_material()
+                surface_mtl.base_color = np.array([0.0, 1.0, 0.0, 1.0])
+                surface_mtl.metallic  = 0.0
+                surface_mtl.roughness = 0.3
+                surface_mtl.specular  = 0.8
+                thickness = 1e-3
+                #sheet_half_size = np.array([0.2, 0.2, thickness]) / 2
+                #sheet_pose = _pose.p.copy()
+                #sheet_pose[0] -= 0.35
+                #sheet_pose[1] += 0.15
+                #sheet_pose[2] += (_half_size[2] + thickness/2)
+                
+                sheet_pose = sapien.Pose(p=[0.72, 0.08, _half_size[2] + thickness/2], q=euler2quat(0, 0, 0.1284))
+                sheet_size = np.array([0.21, 0.26, thickness]) 
+                builder.add_box_visual(pose=sheet_pose, half_size=sheet_size, material=surface_mtl)
+
                 # Ground
                 _color = (np.array([70, 46, 34]) / 255) ** 2.2
                 builder.add_box_visual(half_size=np.array([10.0, 10.0, 0.017]), color=_color)
@@ -388,6 +435,8 @@ class CustomSceneEnv(BaseEnv):
                 mask = mask[..., np.newaxis]
                 
                 # perform overlay on the RGB observation image
+                #print(f"rgb_overlay_img shape: {self.rgb_overlay_img.shape}")
+                #print(f"Shape of Camera {camera_name}: {obs['image'][camera_name]['Color'].shape}")
                 rgb_overlay_img = cv2.resize(self.rgb_overlay_img, (obs['image'][camera_name]['Color'].shape[1], obs['image'][camera_name]['Color'].shape[0]))
                 if 'debug' not in self.rgb_overlay_mode:
                     obs['image'][camera_name]['Color'][..., :3] = obs['image'][camera_name]['Color'][..., :3] * (1 - mask) + rgb_overlay_img * mask
