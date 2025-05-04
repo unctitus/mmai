@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Dict, List, Optional, Type, Union
+from typing import Dict, List, Optional, Type, Union, Sequence
 
 import numpy as np
 import os
@@ -141,7 +141,7 @@ class CustomSceneEnv(BaseEnv):
     
     def _load_arena_helper(self, add_collision=True):
         builder = self._scene.create_actor_builder()
-        dummy_tabletop_scenes = ["dummy_tabletop", "dummy_tabletop1", "dummy_reasoning_numbers"]
+        dummy_tabletop_scenes = ["dummy_tabletop", "dummy_tabletop1", "dummy_reasoning_numbers", "dummy_wood_tabletop"]
         # scene path
         if self.scene_name is None:
             if 'google_robot_static' in self.robot_uid:
@@ -200,11 +200,15 @@ class CustomSceneEnv(BaseEnv):
             elif self.scene_name in dummy_tabletop_scenes:
                 if self.scene_name == "dummy_tabletop":
                     _pose = sapien.Pose([-0.295, 0, 0.017 + 0.865 / 2])
-                    _half_size = np.array([0.63, 0.615, 0.865]) / 2
+                    _half_size = np.array([0.63, 0.615, 0.865]) / 2 
                 elif self.scene_name == "dummy_tabletop1":
                     q = euler2quat(0, 0, np.deg2rad(-6))
+                    _pose = sapien.Pose(p=[-0.48, 0., 0.017 + 0.865 / 2], q=q)
+                    _half_size = np.array([0.95, 1.8, 0.865]) / 2
+                elif self.scene_name == "dummy_wood_tabletop":
+                    q = euler2quat(0, 0, np.deg2rad(28))
                     _pose = sapien.Pose(p=[-0.42, 0, 0.017 + 0.865 / 2], q=q)
-                    _half_size = np.array([0.87, 1.8, 0.865]) / 2
+                    _half_size = np.array([0.95, 3.2, 0.865]) / 2
                 elif self.scene_name == "dummy_reasoning_numbers":
                     q = euler2quat(0, 0, np.deg2rad(28))
                     _pose = sapien.Pose(p=[-0.42, 0, 0.017 + 0.865 / 2], q=q)
@@ -238,21 +242,21 @@ class CustomSceneEnv(BaseEnv):
                 builder.add_box_visual(pose=face_pose, half_size=face_half, material=surface_mtl)
 
                 # Add surface for number sheet on top of the table
-                surface_mtl = self._renderer.create_material()
-                surface_mtl.base_color = np.array([0.0, 1.0, 0.0, 1.0])
-                surface_mtl.metallic  = 0.0
-                surface_mtl.roughness = 0.3
-                surface_mtl.specular  = 0.8
-                thickness = 1e-3
+                #surface_mtl = self._renderer.create_material()
+                #surface_mtl.base_color = np.array([0.0, 1.0, 0.0, 1.0])
+                #surface_mtl.metallic  = 0.0
+                #surface_mtl.roughness = 0.3
+                #surface_mtl.specular  = 0.8
+                #thickness = 1e-3
                 #sheet_half_size = np.array([0.2, 0.2, thickness]) / 2
                 #sheet_pose = _pose.p.copy()
                 #sheet_pose[0] -= 0.35
                 #sheet_pose[1] += 0.15
                 #sheet_pose[2] += (_half_size[2] + thickness/2)
                 
-                sheet_pose = sapien.Pose(p=[0.72, 0.08, _half_size[2] + thickness/2], q=euler2quat(0, 0, 0.1284))
-                sheet_size = np.array([0.21, 0.26, thickness]) 
-                builder.add_box_visual(pose=sheet_pose, half_size=sheet_size, material=surface_mtl)
+                #sheet_pose = sapien.Pose(p=[0.72, 0.08, _half_size[2] + thickness/2], q=euler2quat(0, 0, 0.1284))
+                #sheet_size = np.array([0.21, 0.26, thickness]) 
+               # builder.add_box_visual(pose=sheet_pose, half_size=sheet_size, material=surface_mtl)
 
                 # Ground
                 _color = (np.array([70, 46, 34]) / 255) ** 2.2
@@ -539,7 +543,55 @@ class CustomOtherObjectsInSceneEnv(CustomSceneEnv):
 
         actor = builder.build()
         return actor
-                
+
+    
+    # Note the pose of the object will be determined in the _initalize_actor function via actor.set_pose()
+    #@staticmethod
+    def _build_box_actor(self,
+        scene: sapien.Scene,
+        size: Sequence[float],
+        #xyz: Sequence[float],           # [x, y, z] 
+        #quat: Sequence[float],         # [qw, qx, qy, qz] quaternion 
+        rgba: Sequence[float] = (0., 1., 0., 1.), # green 
+        material_props: Sequence[float] = (0., 0.3, 0.8),  # metallic, roughness, specular
+        physical_material: sapien.PhysicalMaterial = None,
+        density: float = 1000.0,
+        ) -> sapien.Actor:
+        """
+        Builds a box actor whose collision uses `physical_material` + `density`
+        and whose visual is a PBR box of the given color/material_props.
+        """
+
+        # 1) create the builder
+        builder = scene.create_actor_builder()
+
+        # 2) compute half‐size & pose
+        half_size = np.array(size, dtype=np.float32) / 2
+        #box_pose = sapien.Pose(p=xyz, q=quat)
+
+        # 3) add collision with custom physical material & density
+        builder.add_box_collision(
+            #pose=box_pose,
+            half_size=half_size,
+            material=physical_material,
+            density=density,
+        )
+
+        # 4) create a PBR material for the visual
+        vis_mat = self._renderer.create_material()
+        vis_mat.base_color = np.array(rgba, dtype=np.float32)
+        vis_mat.metallic, vis_mat.roughness, vis_mat.specular = material_props
+
+           
+        # 5) add the visual box
+        builder.add_box_visual(
+           # pose=box_pose,
+            half_size=half_size,
+            material=vis_mat,
+        )
+
+        # 6) build and return
+        return builder.build()            
                 
 
 class CustomBridgeObjectsInSceneEnv(CustomOtherObjectsInSceneEnv):

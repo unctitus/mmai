@@ -179,7 +179,7 @@ def main():
                     "init_rot_quat": init_rot_quat,
                 },
             }
-        elif names_in_env_id_fxn(["MoveNear"]):
+        elif names_in_env_id_fxn(["MoveNear", "PutOn"]):
             # data/real_inpainting/google_move_near_real_eval_1.png
             init_rot_quat = (Pose(q=euler2quat(0, 0, -0.09)) * Pose(q=[0, 0, 0, 1])).q
             env_reset_options = {
