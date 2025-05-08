@@ -28,10 +28,8 @@ dependencies = [
     "sapien==2.2.2",
     "scipy==1.12.0",
     "tabulate>=0.9.0",
-    "tensorflow[and-cuda]==2.15.1",
     "tensorflow-datasets==4.9.4",
     "tensorflow-hub==0.16.0",
-    "tf-agents==0.19.0",
     "tfds-nightly==4.9.4.dev202403220044",
     "tfp-nightly==0.25.0.dev20240322",
     "tqdm>=4.67.1",
@@ -44,8 +42,17 @@ dependencies = [
     "ipywidgets>=8.1.6",
     "octo",
     "jax[cuda12]>=0.4.20",
-    "jaxlib==0.4.20+cuda12.cudnn89",
+    "jaxlib==0.4.20",
     "anytree",
+    "torch==2.3.1",
+    "torchvision==0.18.1",
+    "timm==0.9.10",
+    "accelerate==0.32.1",
+    "hdfs==2.7.3",
+    "ninja>=1.11.1.4",
+    "packaging>=25.0",
+    "flash-attn",
+    "pandas>=2.2.3",
 ]
 
 [dependency-groups]
@@ -55,9 +62,10 @@ dev = [
 ]
 
 [tool.uv.sources]
-mani-skill2-real2sim = { path = "ManiSkill2_real2sim", editable = true }
-simpler-env = { workspace = true }
 octo = { path = "octo", editable = true }
+simpler-env = { workspace = true }
+mani-skill2-real2sim = { path = "ManiSkill2_real2sim", editable = true }
+flash-attn = { url = "https://github.com/Dao-AILab/flash-attention/releases/download/v2.6.1/flash_attn-2.6.1+cu123torch2.3cxx11abiFALSE-cp310-cp310-linux_x86_64.whl" }
 
 [build-system]
 requires = ["setuptools", "wheel"]

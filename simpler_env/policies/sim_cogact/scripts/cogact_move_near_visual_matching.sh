@@ -1,21 +1,15 @@
 
 gpu_id=0
 
-declare -a arr=("./checkpoints/rt_1_tf_trained_for_000400120/" \
-                "./checkpoints/rt_1_x_tf_trained_for_002272480_step/" \
-                "./checkpoints/rt_1_tf_trained_for_000058240/" \
-                "./checkpoints/rt_1_tf_trained_for_000001120/")
+declare -a arr=("CogACT/CogACT-Base")
 
-
-env_name=MoveNearGoogleBakedTexInSceneNew-v0
-# env_name=MoveNearGoogleBakedTexInScene-v0
+env_name=MoveNearGoogleBakedTexInScene-v0
 # env_name=MoveNearGoogleBakedTexInScene-v1
-scene_name=dummy_tabletop1
-rgb_overlay_path=./ManiSkill2_real2sim/data/real_inpainting/table_env1.png
+scene_name=google_pick_coke_can_1_v4
+rgb_overlay_path=./ManiSkill2_real2sim/data/real_inpainting/google_move_near_real_eval_1.png
 
 # URDF variations
 declare -a urdf_version_arr=(None "recolor_tabletop_visual_matching_1" "recolor_tabletop_visual_matching_2" "recolor_cabinet_visual_matching_1")
-#declare -a urdf_version_arr=("recolor_cabinet_visual_matching_1")
 
 for ckpt_path in "${arr[@]}"; do echo "$ckpt_path"; done
 
@@ -24,7 +18,7 @@ for urdf_version in "${urdf_version_arr[@]}";
 
 do for ckpt_path in "${arr[@]}";
 
-do CUDA_VISIBLE_DEVICES=${gpu_id} python simpler_env/main_inference.py --policy-model rt1 --ckpt-path ${ckpt_path} \
+do CUDA_VISIBLE_DEVICES=${gpu_id} python simpler_env/main_inference.py --policy-model cogact --ckpt-path ${ckpt_path} \
   --robot google_robot_static \
   --control-freq 3 --sim-freq 513 --max-episode-steps 80 \
   --env-name ${env_name} --scene-name ${scene_name} \

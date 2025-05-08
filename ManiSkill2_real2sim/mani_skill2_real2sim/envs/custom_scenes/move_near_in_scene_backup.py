@@ -668,26 +668,17 @@ class PutOnNumberGoogleInSceneEnv(MoveNearInSceneEnv, CustomOtherObjectsInSceneE
         self._setup_obj_configs()
         super().__init__(**kwargs)
 
-    def _initialize_episode_stats(self):
-        self.episode_stats = OrderedDict(
-            moved_correct_obj=False,
-            moved_wrong_obj=False,
-            is_src_obj_grasped=False,
-            consecutive_grasp=False,
-            src_on_target=False,
-        )
-
+    
     def _setup_obj_configs(self):
         # Note: the cans are "opened" here to match the real evaluation; we'll remove "open" when getting language instruction
         self.source_objects_ids = [
             "blue_plastic_bottle", "baked_opened_pepsi_can", "orange",
             "baked_opened_7up_can", "baked_apple", "baked_sponge",
-            "baked_opened_coke_can", "baked_opened_redbull_can",
+            "baked_opened_coke_can", "baked_opened_redbull_can", "baked_apple",
         ]
 
-        #self.source_object_xys = [[-0.33, 0.34],]
-        self.source_object_xys = [[-0.2790, 0.355],]
-        #self.source_object_xys = [[-0.3790, 0.2355],] #equidistant point
+        self.source_object_xys = [[-0.33, 0.34],]
+
         thickness = 0.001
         self.target_objects_info = {
             "number6": {
@@ -735,15 +726,12 @@ class PutOnNumberGoogleInSceneEnv(MoveNearInSceneEnv, CustomOtherObjectsInSceneE
         obj_init_options = obj_init_options.copy()
         
         self.set_episode_rng(seed)
-
-        self.consecutive_grasp = 0
         
         target_num  = len(self.target_objects_ids)
         source_num = len(self.source_objects_ids)
         source_xys_num = len(self.source_object_xys)
         num_episodes = target_num * source_num * source_xys_num
         episode_id = obj_init_options.get("episode_id", self._episode_rng.randint(num_episodes))
-        episode_id = episode_id % num_episodes
         target_obj_id, remainder = divmod(episode_id, (source_num * source_xys_num))
         source_obj_id, source_obj_xys_id = divmod(remainder, source_xys_num)
         source_object = self.source_objects_ids[source_obj_id]
@@ -751,7 +739,7 @@ class PutOnNumberGoogleInSceneEnv(MoveNearInSceneEnv, CustomOtherObjectsInSceneE
         # First 3 objects are the surfaces and the last one must be the source object
         options["model_ids"] = self.target_objects_ids + [source_object]
         # Assumes that 4 objects are loaded and last one is source object
-        obj_init_options["source_obj_id"] = len(options["model_ids"]) - 1
+        obj_init_options["source_obj_id"] = 3
         obj_init_options["target_obj_id"] = target_obj_id
         obj_init_options["init_xys"] = self.target_objects_xys + [self.source_object_xys[source_obj_xys_id]]
         obj_init_options["init_rot_quats"] = self.target_objects_quats + [self.obj_init_quat_dict[source_object]]
@@ -816,7 +804,7 @@ class PutOnNumberGoogleInSceneEnv(MoveNearInSceneEnv, CustomOtherObjectsInSceneE
                         size=self.target_objects_size[model_id],   # full box extents in meters
                         #xyz=self.target_objects_xys[model_id] + [self.scene_table_height], # x, y, z 
                         #quat=self.target_objects_quats[model_id],   # qw, qx, qy, qz 
-                        rgba=(0., 1., 0., 0.),          # base_color RGBA (green)
+                        rgba=(0., 1., 0., 1.),          # base_color RGBA (green)
                         material_props=(0.0, 0.3, 0.8), # (metallic, roughness, specular)
                         density=1200.0,                  # in kg/m³
                         physical_material=self._scene.create_physical_material(
@@ -850,194 +838,7 @@ class PutOnNumberGoogleInSceneEnv(MoveNearInSceneEnv, CustomOtherObjectsInSceneE
             obj.name = model_id
             self.episode_objs.append(obj)
 
-    def evaluate(self, success_require_src_completely_on_target=True, z_flag_required_offset=0.02, **kwargs):
-        source_obj_pose = self.source_obj_pose
-        target_obj_pose = self.target_obj_pose
 
-        # whether moved the correct object
-        source_obj_xy_move_dist = np.linalg.norm(
-            self.episode_source_obj_xyz_after_settle[:2] - self.source_obj_pose.p[:2]
-        )
-        other_obj_xy_move_dist = []
-        for obj, obj_xyz_after_settle in zip(
-            self.episode_objs, self.episode_obj_xyzs_after_settle
-        ):
-            if obj.name == self.episode_source_obj.name:
-                continue
-            other_obj_xy_move_dist.append(
-                np.linalg.norm(obj_xyz_after_settle[:2] - obj.pose.p[:2])
-            )
-        moved_correct_obj = (source_obj_xy_move_dist > 0.03) and (
-            all([x < source_obj_xy_move_dist for x in other_obj_xy_move_dist])
-        )
-        moved_wrong_obj = any([x > 0.03 for x in other_obj_xy_move_dist]) and any(
-            [x > source_obj_xy_move_dist for x in other_obj_xy_move_dist]
-        )
-
-        # whether the source object is grasped
-        is_src_obj_grasped = self.agent.check_grasp(self.episode_source_obj)
-        if is_src_obj_grasped:
-            self.consecutive_grasp += 1
-        else:
-            self.consecutive_grasp = 0
-        consecutive_grasp = self.consecutive_grasp >= 5
-
-        # whether the source object is on the target object based on bounding box position
-        tgt_obj_half_length_bbox = (self.episode_target_obj_bbox_world / 2)  
-        src_obj_half_length_bbox = self.episode_source_obj_bbox_world / 2
-
-        pos_src = source_obj_pose.p
-        pos_tgt = target_obj_pose.p
-        #Vector that point from the target to source object
-        offset = pos_src - pos_tgt
-        xy_flag = (
-            np.linalg.norm(offset[:2])
-            <= np.linalg.norm(tgt_obj_half_length_bbox[:2]) + 0.003
-        )
-        z_flag = (offset[2] > 0) and (
-            offset[2] - tgt_obj_half_length_bbox[2] - src_obj_half_length_bbox[2]
-            <= z_flag_required_offset
-        )
-        src_on_target = xy_flag and z_flag
-
-        if success_require_src_completely_on_target:
-            # whether the source object is on the target object based on contact information
-            contacts = self._scene.get_contacts()
-            flag = True
-            robot_link_names = [x.name for x in self.agent.robot.get_links()]
-            tgt_obj_name = self.episode_target_obj.name
-            ignore_actor_names = [tgt_obj_name] + robot_link_names
-            for contact in contacts:
-                actor_0, actor_1 = contact.actor0, contact.actor1
-                other_obj_contact_actor_name = None
-                if actor_0.name == self.episode_source_obj.name:
-                    other_obj_contact_actor_name = actor_1.name
-                elif actor_1.name == self.episode_source_obj.name:
-                    other_obj_contact_actor_name = actor_0.name
-                #For contacts with source object
-                if other_obj_contact_actor_name is not None:
-                    # the object is in contact with an actor
-                    contact_impulse = np.sum(
-                        [point.impulse for point in contact.points], axis=0
-                    )
-                    if (other_obj_contact_actor_name not in ignore_actor_names) and (
-                        np.linalg.norm(contact_impulse) > 1e-6
-                    ):
-                        # the object has contact with an actor other than the robot link or the target object, so the object is not yet put on the target object
-                        flag = False
-                        break
-            src_on_target = src_on_target and flag
-
-        success = src_on_target
-
-        self.episode_stats["moved_correct_obj"] = moved_correct_obj
-        self.episode_stats["moved_wrong_obj"] = moved_wrong_obj
-        self.episode_stats["src_on_target"] = src_on_target
-        self.episode_stats["is_src_obj_grasped"] = (
-            self.episode_stats["is_src_obj_grasped"] or is_src_obj_grasped
-        )
-        self.episode_stats["consecutive_grasp"] = (
-            self.episode_stats["consecutive_grasp"] or consecutive_grasp
-        )
-
-        return dict(
-            moved_correct_obj=moved_correct_obj,
-            moved_wrong_obj=moved_wrong_obj,
-            is_src_obj_grasped=is_src_obj_grasped,
-            consecutive_grasp=consecutive_grasp,
-            src_on_target=src_on_target,
-            episode_stats=self.episode_stats,
-            success=success,
-        )
-
-    def get_language_instruction(self, **kwargs):
-        src_name = self._get_instruction_obj_name(self.episode_source_obj.name)
-        tgt_name = self._get_instruction_obj_name(self.episode_target_obj.name)
-        return f"move {src_name} to {tgt_name.strip()[-1]}"
-
-
-@register_env("PutOnNumberSumGoogleInScene-v0", max_episode_steps=80)
-class PutOnNumberSumGoogleInSceneEnv(PutOnNumberGoogleInSceneEnv):
-    def _setup_obj_configs(self):
-        super()._setup_obj_configs()
-        
-        thickness = 0.001
-        self.target_objects_info = {
-            "number3": {
-                "xy":   [-0.483, -0.080],
-                "quat":  euler2quat(0, 0, 0.5584),
-                "size": [0.323,   0.324,   thickness],
-            },
-        }
-        self.target_objects_ids = list(self.target_objects_info.keys())
-        self.target_objects_xys = [v["xy"] for v in self.target_objects_info.values()]
-        self.target_objects_quats = [v["quat"] for v in self.target_objects_info.values()]
-        
-        self.target_objects_size = {
-            name: info["size"]
-            for name, info in self.target_objects_info.items()
-        }
-
-    def get_language_instruction(self, **kwargs):
-            src_name = self._get_instruction_obj_name(self.episode_source_obj.name)
-            tgt_name = self._get_instruction_obj_name(self.episode_target_obj.name)
-            return f"move {src_name} near the sum of two plus one"
-            
-
-@register_env("PutOnNumberMultGoogleInScene-v0", max_episode_steps=80)
-class PutOnNumberMultGoogleInSceneEnv(PutOnNumberGoogleInSceneEnv):
-    def _setup_obj_configs(self):
-        super()._setup_obj_configs()
-        
-        thickness = 0.001
-        self.target_objects_info = {
-             "number6": {
-                "xy":   [-0.065,  0.127],
-                "quat":  euler2quat(0, 0, 0.6204),
-                "size": [0.21,    0.261,   thickness],
-            },
-        }
-        self.target_objects_ids = list(self.target_objects_info.keys())
-        self.target_objects_xys = [v["xy"] for v in self.target_objects_info.values()]
-        self.target_objects_quats = [v["quat"] for v in self.target_objects_info.values()]
-        
-        self.target_objects_size = {
-            name: info["size"]
-            for name, info in self.target_objects_info.items()
-        }
-
-    def get_language_instruction(self, **kwargs):
-            src_name = self._get_instruction_obj_name(self.episode_source_obj.name)
-            tgt_name = self._get_instruction_obj_name(self.episode_target_obj.name)
-            return f"move {src_name} near the answer of three times two"
-
-@register_env("PutOnNumberSmallestGoogleInScene-v0", max_episode_steps=80)
-class PutOnNumberSmallestGoogleInSceneEnv(PutOnNumberGoogleInSceneEnv):
-    def _setup_obj_configs(self):
-        super()._setup_obj_configs()
-        
-        thickness = 0.001
-        self.target_objects_info = {
-              "number2": {
-                "xy":   [-0.679,  0.378],
-                "quat":  euler2quat(0, 0, 0.4054),
-                "size": [0.307,   0.341,   thickness],
-            },
-        }
-        self.target_objects_ids = list(self.target_objects_info.keys())
-        self.target_objects_xys = [v["xy"] for v in self.target_objects_info.values()]
-        self.target_objects_quats = [v["quat"] for v in self.target_objects_info.values()]
-        
-        self.target_objects_size = {
-            name: info["size"]
-            for name, info in self.target_objects_info.items()
-        }
-
-    def get_language_instruction(self, **kwargs):
-            src_name = self._get_instruction_obj_name(self.episode_source_obj.name)
-            tgt_name = self._get_instruction_obj_name(self.episode_target_obj.name)
-            return f"move {src_name} near the smallest number"
-    
 
 
 

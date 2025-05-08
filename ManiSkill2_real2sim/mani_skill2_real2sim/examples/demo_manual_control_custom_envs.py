@@ -418,10 +418,20 @@ def main():
                 elif key == "g":  # close gripper
                     gripper_action = 1
 
+        
         # Other functions
         if key == "0":  # switch to SAPIEN viewer
             render_wait()
         elif key == "r":  # reset env
+            obs, info = env.reset(options=env_reset_options)
+            print("Reset info:", info)
+            print("Instruction:", env.get_language_instruction())
+            gripper_action = get_reset_gripper_action()
+            after_reset = True
+            continue
+        elif key == "s":  # reset env to next episode
+            episode_id = env_reset_options["obj_init_options"].get("episode_id", 0)
+            env_reset_options["obj_init_options"] = {"episode_id": episode_id + 1}
             obs, info = env.reset(options=env_reset_options)
             print("Reset info:", info)
             print("Instruction:", env.get_language_instruction())
